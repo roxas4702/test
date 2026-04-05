@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Net Worth Dashboard - Advanced</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .input-cell { @apply bg-transparent w-full text-right focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 p-1 rounded; }
+        .header-sticky { position: sticky; top: 0; z-index: 10; }
+    </style>
+</head>
+<body class="bg-gray-100 text-slate-900">
+
+    <div class="flex flex-col md:flex-row min-h-screen">
+        <aside class="w-full md:w-64 bg-slate-900 text-white p-6">
+            <h1 class="text-xl font-bold mb-8 flex items-center gap-2">
+                <span class="text-blue-400 text-2xl">📊</span> NetWorth Pro
+            </h1>
+            <nav class="space-y-4">
+                <button onclick="showSection('overview')" class="w-full text-left p-3 rounded hover:bg-slate-800 transition flex items-center gap-3">
+                    <span>🏠</span> Dashboard Generale
+                </button>
+                <button onclick="showSection('data-entry')" class="w-full text-left p-3 rounded hover:bg-slate-800 transition flex items-center gap-3">
+                    <span>📝</span> Analisi Mensile (Sheet 2)
+                </button>
+                <button onclick="exportData()" class="w-full text-left p-3 rounded hover:bg-slate-700 transition flex items-center gap-3 text-sm text-slate-400 border-t border-slate-700 pt-6">
+                    <span>💾</span> Esporta JSON
+                </button>
+            </nav>
+        </aside>
+
+        <main class="flex-1 p-4 md:p-10 overflow-x-hidden">
+            
+            <section id="overview" class="space-y-8">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div class="bg-white p-6 rounded-xl shadow-sm border-b-4 border-blue-500">
+                        <p class="text-xs uppercase text-slate-400 font-bold">Patrimonio Totale</p>
+                        <h2 id="stat-total" class="text-2xl font-black text-slate-800">€ 0</h2>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-sm border-b-4 border-emerald-500">
+                        <p class="text-xs uppercase text-slate-400 font-bold">Liquidità Reale</p>
+                        <h2 id="stat-liquid" class="text-2xl font-black text-emerald-600">€ 0</h2>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-sm border-b-4 border-indigo-500">
+                        <p class="text-xs uppercase text-slate-400 font-bold">Investito/Vincolato</p>
+                        <h2 id="stat-invested" class="text-2xl font-black text-indigo-600">€ 0</h2>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-sm border-b-4 border-orange-400">
+                        <p class="text-xs uppercase text-slate-400 font-bold">Delta vs Mese Prec.</p>
+                        <h2 id="stat-delta" class="text-2xl font-black text-slate-800">€ 0</h2>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div class="bg-white p-6 rounded-xl shadow-sm">
+                        <h3 class="font-bold mb-4">Trend di Crescita</h3>
+                        <canvas id="trendChart"></canvas>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-sm">
+                        <h3 class="font-bold mb-4">Ripartizione Asset Attuale</h3>
+                        <canvas id="pieChart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <section id="data-entry" class="hidden">
+                <div class="bg-white rounded-xl shadow-lg overflow-hidden">
+                    <div class="p-4 bg-slate-50 border-b flex justify-between items-center">
+                        <h3 class="font-black text-slate-700 uppercase tracking-tighter">Database Storico Dettagliato</h3>
+                        <button onclick="addMonth()" class="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-blue-700">+ Nuovo Mese</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-100 text-slate-600">
+                                    <th class="p-3 border">Mese</th>
+                                    <th class="p-3 border bg-emerald-50 text-emerald-700 text-center" colspan="3">Liquidità (€)</th>
+                                    <th class="p-3 border bg-indigo-50 text-indigo-700 text-center" colspan="2">Investimenti (€)</th>
+                                    <th class="p-3 border font-bold text-center">Totale</th>
+                                    <th class="p-3 border">Delta</th>
+                                </tr>
+                                <tr class="bg-slate-50 text-[10px] uppercase text-slate-500">
+                                    <th class="p-2 border">Etichetta</th>
+                                    <th class="p-2 border italic text-center">Conto 1</th>
+                                    <th class="p-2 border italic text-center">Conto 2</th>
+                                    <th class="p-2 border italic text-center">Cash/Varie</th>
+                                    <th class="p-2 border italic text-center">Vincolati</th>
+                                    <th class="p-2 border italic text-center">Azionario/ETF</th>
+                                    <th class="p-2 border text-center">Somma</th>
+                                    <th class="p-2 border text-center">+/-</th>
+                                </tr>
+                            </thead>
+                            <tbody id="networth-body">
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        // Database speculare al tuo foglio (struttura a oggetti per ogni categoria)
+        let db = JSON.parse(localStorage.getItem('nw_advanced_db')) || [
+            { id: 1, mese: "Gennaio 2026", c1: 10000, c2: 4000, cash: 509, vincolato: 2940, etf: 0 },
+            { id: 2, mese: "Febbraio 2026", c1: 12000, c2: 4500, cash: 344, vincolato: 2940, etf: 0 },
+            { id: 3, mese: "Marzo 2026", c1: 12500, c2: 4700, cash: 304, vincolato: 2940, etf: 0 }
+        ];
+
+        let trendChart, pieChart;
+
+        function showSection(id) {
+            document.getElementById('overview').classList.toggle('hidden', id !== 'overview');
+            document.getElementById('data-entry').classList.toggle('hidden', id !== 'data-entry');
+            if(id === 'overview') updateCharts();
+        }
+
+        function calculateRowTotal(row) {
+            return row.c1 + row.c2 + row.cash + row.vincolato + row.etf;
+        }
+
+        function renderTable() {
+            const container = document.getElementById('networth-body');
+            container.innerHTML = '';
+
+            db.forEach((row, index) => {
+                const total = calculateRowTotal(row);
+                const prevTotal = index > 0 ? calculateRowTotal(db[index-1]) : total;
+                const delta = total - prevTotal;
+                const deltaClass = delta >= 0 ? 'text-green-600' : 'text-red-600';
+
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50 transition";
+                tr.innerHTML = `
+                    <td class="p-2 border font-bold"><input type="text" class="input-cell text-left" value="${row.mese}" onchange="updateDb(${index}, 'mese', this.value)"></td>
+                    <td class="p-2 border"><input type="number" class="input-cell" value="${row.c1}" onchange="updateDb(${index}, 'c1', this.value)"></td>
+                    <td class="p-2 border"><input type="number" class="input-cell" value="${row.c2}" onchange="updateDb(${index}, 'c2', this.value)"></td>
+                    <td class="p-2 border"><input type="number" class="input-cell" value="${row.cash}" onchange="updateDb(${index}, 'cash', this.value)"></td>
+                    <td class="p-2 border"><input type="number" class="input-cell" value="${row.vincolato}" onchange="updateDb(${index}, 'vincolato', this.value)"></td>
+                    <td class="p-2 border"><input type="number" class="input-cell" value="${row.etf}" onchange="updateDb(${index}, 'etf', this.value)"></td>
+                    <td class="p-2 border font-black text-center bg-slate-50">€ ${total.toLocaleString()}</td>
+                    <td class="p-2 border font-bold text-center ${deltaClass}">${delta > 0 ? '+' : ''}${delta.toLocaleString()}</td>
+                `;
+                container.appendChild(tr);
+            });
+        }
+
+        function updateDb(index, field, value) {
+            db[index][field] = field === 'mese' ? value : parseFloat(value) || 0;
+            localStorage.setItem('nw_advanced_db', JSON.stringify(db));
+            renderTable();
+            updateStats();
+        }
+
+        function addMonth() {
+            const last = db[db.length - 1];
+            db.push({...last, id: Date.now(), mese: "Nuovo Mese"});
+            renderTable();
+        }
+
+        function updateStats() {
+            const last = db[db.length - 1];
+            const prev = db.length > 1 ? db[db.length - 2] : last;
+            
+            const total = calculateRowTotal(last);
+            const liquid = last.c1 + last.c2 + last.cash;
+            const invested = last.vincolato + last.etf;
+            const delta = total - calculateRowTotal(prev);
+
+            document.getElementById('stat-total').innerText = `€ ${total.toLocaleString()}`;
+            document.getElementById('stat-liquid').innerText = `€ ${liquid.toLocaleString()}`;
+            document.getElementById('stat-invested').innerText = `€ ${invested.toLocaleString()}`;
+            document.getElementById('stat-delta').innerText = `${delta >= 0 ? '↑' : '↓'} € ${Math.abs(delta).toLocaleString()}`;
+            document.getElementById('stat-delta').className = `text-2xl font-black ${delta >= 0 ? 'text-green-500' : 'text-red-500'}`;
+        }
+
+        function updateCharts() {
+            const ctxTrend = document.getElementById('trendChart').getContext('2d');
+            const ctxPie = document.getElementById('pieChart').getContext('2d');
+            const last = db[db.length - 1];
+
+            if(trendChart) trendChart.destroy();
+            if(pieChart) pieChart.destroy();
+
+            trendChart = new Chart(ctxTrend, {
+                type: 'line',
+                data: {
+                    labels: db.map(d => d.mese),
+                    datasets: [{
+                        label: 'Net Worth',
+                        data: db.map(d => calculateRowTotal(d)),
+                        borderColor: '#3b82f6',
+                        fill: true,
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        tension: 0.3
+                    }]
+                }
+            });
+
+            pieChart = new Chart(ctxPie, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Liquidità', 'Vincolato', 'ETF/Azioni'],
+                    datasets: [{
+                        data: [last.c1+last.c2+last.cash, last.vincolato, last.etf],
+                        backgroundColor: ['#10b981', '#6366f1', '#f59e0b']
+                    }]
+                }
+            });
+        }
+
+        function exportData() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(db));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", "net_worth_backup.json");
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        }
+
+        // Init
+        renderTable();
+        updateStats();
+        updateCharts();
+    </script>
+</body>
+</html>
